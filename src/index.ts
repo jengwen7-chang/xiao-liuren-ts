@@ -1,5 +1,5 @@
 /**
- * 小六壬預測系統 (Xiao Liu Ren Divination)
+ * 小六壬預測系統 (Xiao Liu Ren Divination) - v1.1.0
  * TypeScript 版本
  */
 
@@ -28,11 +28,34 @@ const GRID: Record<number, GridItem> = {
     9: { name: "天德", 五行: "金", 方位: "西北", 特質: "貴人、上司、高遠", 神煞: "天德貴人", 意義: "吉祥", 尋物: "有貴人幫忙找回", 辦事求職: "紫微降臨，求人辦事", 感情人際: "有長輩撮合", 疾病身體: "有福報" }
 };
 
+// 建立 name -> GRID 的映射以提高查找效率
+const GRID_BY_NAME: Record<string, GridItem> = Object.values(GRID).reduce((acc, item) => {
+    acc[item.name] = item;
+    return acc;
+}, {} as Record<string, GridItem>);
+
 const NINE_GRID = ["留連", "大安", "桃花", "速喜", "空亡", "小吉", "病符", "赤口", "天德"];
 const BASE_SIX = ["大安", "留連", "速喜", "赤口", "小吉", "空亡"];
 
+/**
+ * 驗證數字是否在有效範圍內
+ */
+function validateNumber(n: number, name: string, min: number = 1, max: number = 9): void {
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < min || n > max) {
+        throw new Error(`${name} 必須是 ${min}-${max} 的整數`);
+    }
+}
+
 class XiaoLiuRen {
+    /**
+     * 三數起卦法
+     */
     divine(n1: number, n2: number, n3: number): object {
+        // 輸入驗證
+        validateNumber(n1, 'n1');
+        validateNumber(n2, 'n2');
+        validateNumber(n3, 'n3');
+
         const startIdx = n1 - 1;
         const start = NINE_GRID[startIdx];
         
@@ -41,7 +64,8 @@ class XiaoLiuRen {
         
         const finalIdx = (step2Idx + n3) % 9;
         const final = NINE_GRID[finalIdx];
-        const info = GRID[finalIdx + 1];
+        
+        const info = GRID_BY_NAME[final];
         
         return {
             方法: "三數起卦",
@@ -67,20 +91,42 @@ class XiaoLiuRen {
         };
     }
 
+    /**
+     * 時間起卜法
+     */
     divineByTime(month: number, day: number, hour: number): object {
+        // 輸入驗證
+        validateNumber(month, 'month', 1, 12);
+        validateNumber(day, 'day', 1, 30);
+        validateNumber(hour, 'hour', 1, 12);
+
         const idx = (month + day + hour - 2) % 6;
         const result = BASE_SIX[idx];
-        
-        const info = Object.values(GRID).find(g => g.name === result) || {};
+        const info = GRID_BY_NAME[result];
         
         return {
             方法: "時間起卜",
             input: `月=${month}, 日=${day}, 時=${hour}`,
-            結論: result,
-            詳情: info
+            結論: {
+                卦名: result,
+                五行: info.五行,
+                方位: info.方位,
+                特質: info.特質,
+                神煞: info.神煞,
+                意義: info.意義
+            },
+            常見用法: {
+                尋物: info.尋物,
+                辦事求職: info.辦事求職,
+                感情人際: info.感情人際,
+                疾病身體: info.疾病身體
+            }
         };
     }
 
+    /**
+     * 隨機一卦
+     */
     random(): object {
         const n1 = Math.floor(Math.random() * 9) + 1;
         const n2 = Math.floor(Math.random() * 9) + 1;
@@ -98,7 +144,7 @@ const fastify = Fastify({ logger: true });
 const diviner = new XiaoLiuRen();
 
 fastify.get('/', async () => ({
-    message: '小六壬 API v1.0.0',
+    message: '小六壬 API v1.1.0',
     endpoints: [
         '/divine?n1=1&n2=7&n3=5 - 三數起卦',
         '/time?month=1&day=17&hour=1 - 時間起卜',
@@ -108,14 +154,26 @@ fastify.get('/', async () => ({
 
 fastify.get('/divine', async (request) => {
     const { n1, n2, n3 } = request.query as { n1?: string; n2?: string; n3?: string };
-    if (!n1 || !n2 || !n3) return { error: '請提供 n1, n2, n3' };
-    return diviner.divine(parseInt(n1), parseInt(n2), parseInt(n3));
+    if (!n1 || !n2 || !n3) {
+        return { error: '請提供 n1, n2, n3 (1-9 的整數)' };
+    }
+    try {
+        return diviner.divine(parseInt(n1), parseInt(n2), parseInt(n3));
+    } catch (e: any) {
+        return { error: e.message };
+    }
 });
 
 fastify.get('/time', async (request) => {
     const { month, day, hour } = request.query as { month?: string; day?: string; hour?: string };
-    if (!month || !day || !hour) return { error: '請提供 month, day, hour' };
-    return diviner.divineByTime(parseInt(month), parseInt(day), parseInt(hour));
+    if (!month || !day || !hour) {
+        return { error: '請提供 month (1-12), day (1-30), hour (1-12)' };
+    }
+    try {
+        return diviner.divineByTime(parseInt(month), parseInt(day), parseInt(hour));
+    } catch (e: any) {
+        return { error: e.message };
+    }
 });
 
 fastify.get('/random', async () => diviner.random());
